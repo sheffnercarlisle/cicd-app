@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: cicd-demo-
+spec:
+  volumes:
+    - name: docker-credentials
+      secret:
+        secretName: docker-credentials
+  entrypoint: cicd-demo
+  templates:
+    - name: cicd-demo
+      steps:
+        - - name: checkout
+            template: checkout
+        - - name: build
+            template: build
+            arguments:
+              parameters:
+                - name: tag
+                  value: "{{steps.checkout.outputs.parameters.tag}}"
+
+    - name: checkout
+      container:
+        image: alpine:latest
+        command: ["/bin/sh", "-c"]
+        args: ["apk add git &&
+          git clone https://github.com/sheffnercarlisle/cicd-app.git &&
+          cd cicd-app &&
+          git rev-parse --short HEAD > /tmp/tag"]
+      outputs:
+        parameters:
+          - name: tag
+            valueFrom:
+              path: /tmp/tag
+
+    - name: build
+      inputs:
+        parameters:
+          - name: tag
+      container:
+        image: gcr.io/kaniko-project/executor:latest
+        args: ["--context=git://github.com/sheffnercarlisle/cicd-app.git",
+               "--destination=cpsma/cicd-app:{{inputs.parameters.tag}}"]
+        volumeMounts:
+          - name: docker-credentials
+            mountPath: /kaniko/.docker/config.json
+            subPath: config.json
