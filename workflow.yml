@@ -7,6 +7,9 @@ spec:
     - name: docker-credentials
       secret:
         secretName: docker-credentials
+    - name: github-token
+      secret:
+        secretName: github-token
   entrypoint: cicd-demo
   templates:
     - name: cicd-demo
@@ -15,6 +18,12 @@ spec:
             template: checkout
         - - name: build
             template: build
+            arguments:
+              parameters:
+                - name: tag
+                  value: "{{steps.checkout.outputs.parameters.tag}}"
+        - - name: update
+            template: update
             arguments:
               parameters:
                 - name: tag
@@ -46,3 +55,26 @@ spec:
           - name: docker-credentials
             mountPath: /kaniko/.docker/config.json
             subPath: config.json
+
+    - name: update
+      inputs:
+        parameters:
+          - name: tag
+      container:
+        image: alpine:latest
+        command: ["/bin/sh", "-c"]
+        args: ["apk add git &&
+          git clone https://github.com/sheffnercarlisle/cicd-deployment.git &&
+          cd cicd-deployment &&
+          git config --global user.email 'argo@carlisle.k12.ma.us' &&
+          git config --global user.name 'Argo Workflow' &&
+          sed -i 's|\\(cpsma/cicd-app:\\).*|\\1{{inputs.parameters.tag}}|g' deployment.yml &&
+          git add . &&
+          git commit -m 'Update image to {{inputs.parameters.tag}}' &&
+          git push https://argo:$TOKEN@github.com/sheffnercarlisle/cicd-deployment.git"]
+        env:
+          - name: TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: github-token
+                key: token
